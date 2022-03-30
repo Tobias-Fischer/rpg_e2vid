@@ -8,6 +8,7 @@ import zipfile
 import shutil
 import sys
 from os.path import basename
+from tqdm.auto import tqdm
 
 
 # Function borrowed from: https://stackoverflow.com/a/3041990
@@ -34,7 +35,7 @@ def query_yes_no(question, default="yes"):
 
     while True:
         sys.stdout.write(question + prompt)
-        choice = raw_input().lower()
+        choice = input().lower()
         if default is not None and choice == '':
             return valid[default]
         elif choice in valid:
@@ -60,7 +61,7 @@ if __name__ == "__main__":
     parser.set_defaults(no_zip=False)
     args = parser.parse_args()
 
-    print('Data will be extracted in folder: {}'.format(args.output_folder))
+    tqdm.write('Data will be extracted in folder: {}'.format(args.output_folder))
 
     if not os.path.exists(args.output_folder):
         os.makedirs(args.output_folder)
@@ -79,23 +80,25 @@ if __name__ == "__main__":
             # Look for the topics that are available and save the total number of messages for each topic (useful for the progress bar)
             total_num_event_msgs = 0
             topics = bag.get_type_and_topic_info().topics
-            for topic_name, topic_info in topics.iteritems():
+            for topic_name, topic_info in topics.items():
                 if topic_name == args.event_topic:
                     total_num_event_msgs = topic_info.message_count
-                    print('Found events topic: {} with {} messages'.format(topic_name, topic_info.message_count))
+                    tqdm.write('Found events topic: {} with {} messages'.format(topic_name, topic_info.message_count))
 
             # Extract events to text file
+            pbar = tqdm(total=total_num_event_msgs)
+
             for topic, msg, t in bag.read_messages():
                 if topic == args.event_topic:
 
                     if width is None:
                         width = msg.width
                         height = msg.height
-                        print('Found sensor size: {} x {}'.format(width, height))
+                        tqdm.write('Found sensor size: {} x {}'.format(width, height))
                         events_file.write("{} {}\n".format(width, height))
 
                     if event_msg_sum % num_msgs_between_logs == 0 or event_msg_sum >= total_num_event_msgs - 1:
-                        print('Event messages: {} / {}'.format(event_msg_sum + 1, total_num_event_msgs))
+                        tqdm.write('Event messages: {} / {}'.format(event_msg_sum + 1, total_num_event_msgs))
                     event_msg_sum += 1
 
                     for e in msg.events:
@@ -105,22 +108,26 @@ if __name__ == "__main__":
                         events_file.write(("1" if e.polarity else "0") + "\n")
                         event_sum += 1
 
+                    pbar.update(1)
+
+            pbar.close()
+
         # statistics
-        print('All events extracted!')
-        print('Events:', event_sum)
+        tqdm.write('All events extracted!')
+        tqdm.write('Events: {}'.format(event_sum))
 
     # Zip text file
     if not args.no_zip:
-        print('Compressing text file...')
+        tqdm.write('Compressing text file...')
         path_to_events_zipfile = os.path.join(args.output_folder, '{}.zip'.format(output_name))
         with zipfile.ZipFile(path_to_events_zipfile, 'w') as zip_file:
             zip_file.write(path_to_events_file, basename(path_to_events_file), compress_type=zipfile.ZIP_DEFLATED)
-        print('Finished!')
+        tqdm.write('Finished!')
 
         # Remove events.txt
         if query_yes_no('Remove text file {}?'.format(path_to_events_file)):
             if os.path.exists(path_to_events_file):
                 os.remove(path_to_events_file)
-                print('Removed {}.'.format(path_to_events_file))
+                tqdm.write('Removed {}.'.format(path_to_events_file))
 
-    print('Done extracting events!')
+    tqdm.write('Done extracting events!')
